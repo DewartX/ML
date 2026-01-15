@@ -1,0 +1,93 @@
+import numpy as np
+from keras.src.datasets import mnist
+
+def relu(x):
+    return np.maximum(0, x)
+
+def reluderiv(x):
+    return (x > 0).astype(float)
+
+def softmax(x):
+    exp_x = np.exp(x - np.max(x, axis=1, keepdims=True))
+    return exp_x / exp_x.sum(axis=1, keepdims=True)
+
+train_images_count = 1000
+test_images_count = 1000
+pixels_per_image = 28 * 28
+digits_num = 10
+hidden_size = 100
+learning_rate = 0.01
+num_epoch = 200
+batch_size = 20  #размер пакета
+
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+
+train_images = x_train[:train_images_count].reshape(train_images_count, pixels_per_image) / 255.0
+test_images = x_test[:test_images_count].reshape(test_images_count, pixels_per_image) / 255.0
+
+def one_hot(labels, num_classes):
+    out = np.zeros((len(labels), num_classes))
+    for i, val in enumerate(labels):
+        out[i, val] = 1
+    return out
+
+train_labels = one_hot(y_train[:train_images_count], digits_num)
+test_labels = one_hot(y_test[:test_images_count], digits_num)
+
+np.random.seed(2)
+weight_hid = np.random.uniform(-0.1, 0.1, (pixels_per_image, hidden_size))
+weight_out = np.random.uniform(-0.1, 0.1, (hidden_size, digits_num))
+
+#Обучение
+for epoch in range(num_epoch):
+    correct_answers = 0
+    num_batches = len(train_images) // batch_size
+
+    for j in range(num_batches):
+        batch_start = batch_size * j
+        batch_end = batch_size * (j+1)
+
+        # Берем пакет изображений и их метки
+        layer_in = train_images[batch_start:batch_end]
+        layer_hid = relu(np.dot(layer_in, weight_hid))
+        layer_out = softmax(np.dot(layer_hid, weight_out))
+
+        # Подсчет правильных ответов в пакете
+        for k in range(batch_size):
+            correct_answers += int(np.argmax(layer_out[k:k+1]) == np.argmax(train_labels[batch_start + k:batch_start + k + 1]))
+
+        # Пакетный градиент (усредненный по батчу)
+        layer_out_delta = (layer_out - train_labels[batch_start:batch_end]) / batch_size
+        layer_hid_delta = layer_out_delta.dot(weight_out.T) * reluderiv(layer_hid)
+
+        # Обновление весов
+        weight_out -= learning_rate * layer_hid.T.dot(layer_out_delta)
+        weight_hid -= learning_rate * layer_in.T.dot(layer_hid_delta)
+
+    accuracy = correct_answers * 100 / len(train_images)
+    print(f"Epoch {epoch+1}, Accuracy: {accuracy:.2f}%")
+
+print("-"*50)
+print("Тестовые значения:")
+
+#Тест
+test_slice = 100
+correct_test = 0
+
+for j in range(test_slice):
+    layer_in_test = test_images[j:j+1]
+    layer_hid = relu(np.dot(layer_in_test, weight_hid))
+    layer_out = np.dot(layer_hid, weight_out)
+
+    # Softmax — превращаем логиты в вероятности
+    exp_layer = np.exp(layer_out)
+    layer_out_prob = exp_layer / np.sum(exp_layer, axis=1, keepdims=True)
+
+    predicted_class = np.argmax(layer_out_prob)
+    true_class = np.argmax(test_labels[j:j+1])
+
+    correct_test += int(predicted_class == true_class)
+    print(f"True: {true_class}, Predicted: {predicted_class}")
+
+accuracy = correct_test / test_slice * 100
+print(f"Test accuracy (first {test_slice} images): {accuracy:.2f}%")
